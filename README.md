@@ -1,19 +1,24 @@
 # Fitora
 
-App móvil instalable para rutinas, registro de series y seguimiento personal. Abrí `index.html` en un navegador moderno. Para instalarla como PWA, serví esta carpeta desde HTTPS o localhost y elegí “Agregar a pantalla de inicio”. La biblioteca requiere conexión a internet.
+PWA de entrenamiento en español. Explorá ejercicios, armá rutinas, registrá cada serie y seguí tu progreso desde el teléfono o la computadora.
 
-## Incluye
+## Funciones
 
-- Catálogo de 701 ejercicios en español con filtros por grupo muscular, equipo y dificultad.
-- Instrucciones e ilustraciones; búsqueda en español e inglés.
-- Rutinas de cuerpo completo, tren superior e inferior.
-- Registro de repeticiones, peso y series completadas.
-- Historial, racha, volumen semanal y actividad por semanas.
-- Entrenamientos y favoritos guardados en el dispositivo.
+- Catálogo de ejercicios en español, con búsqueda, filtros, instrucciones e ilustraciones de RepDB.
+- Rutinas sugeridas y rutinas propias que se pueden crear, editar y borrar.
+- Sesiones libres o guiadas, con edición de ejercicios, series, repeticiones y pesos.
+- Temporizador de sesión, pausa, reanudación y descansos configurables.
+- Historial por sesión, progresión por ejercicio, racha, sesiones semanales y volumen.
+- Guardado local automático, reanudación de sesiones pendientes y copias JSON para exportar/importar.
+- PWA instalable; después de cargar el catálogo una vez, la app y el catálogo funcionan sin conexión. Las ilustraciones vistas recientemente se conservan en caché.
+
+## Ejecutar e instalar
+
+Abrí `index.html` para una vista local. Para instalar la PWA, publicá la carpeta desde un origen HTTPS y elegí “Agregar a pantalla de inicio” en el navegador del teléfono. El workflow de GitHub Pages en `.github/workflows/deploy.yml` publica automáticamente cada cambio en `main` cuando Pages está configurado para usar GitHub Actions.
 
 ## Datos y atribución
 
-El catálogo y las ilustraciones se cargan desde [RepDB](https://github.com/RepDB/exercise-dataset) durante el uso; no se ofrece el dataset como descarga. La licencia del nivel gratuito permite el uso personal y comercial dentro de aplicaciones con atribución. La app incluye la atribución visible **Exercise data by RepDB (repdb.co)**. Ver [licencia del dataset](https://github.com/RepDB/exercise-dataset/blob/main/LICENSE-DATA.md).
+El catálogo se obtiene desde [RepDB](https://github.com/RepDB/exercise-dataset) y se mantiene en caché local para uso sin conexión. La licencia del nivel gratuito permite el uso dentro de aplicaciones con atribución. La app muestra **Exercise data by RepDB (repdb.co)**. Ver [licencia del dataset](https://github.com/RepDB/exercise-dataset/blob/main/LICENSE-DATA.md).
 
-La biblioteca necesita internet. El shell de la app y los datos personales quedan en el dispositivo. Las instrucciones son informativas y no reemplazan asesoramiento profesional.
+Los registros de entrenamiento y rutinas permanecen en el dispositivo. Usá “Exportar copia” para guardarlos y “Importar copia” para restaurarlos o combinarlos con los datos actuales. Las instrucciones de ejercicios son informativas y no reemplazan asesoramiento profesional.
 
