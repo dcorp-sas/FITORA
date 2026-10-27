@@ -14,7 +14,7 @@ PWA de entrenamiento en español. Explorá ejercicios, armá rutinas, registrá 
 
 ## Ejecutar e instalar
 
-Abrí `index.html` para una vista local. La imagen Docker y el workflow de este repositorio permiten publicar Fitora de forma independiente en una VPS: el contenedor escucha en `127.0.0.1:8088` y se actualiza al subir cambios a `main`. Configurá en este repositorio los secretos `VPS_HOST`, `VPS_USER` y `VPS_SSH_KEY`; `VPS_PORT` es opcional y usa `22` por defecto. El usuario remoto necesita Docker Compose y permiso para ejecutar Docker.
+Abrí `index.html` para una vista local. La imagen Docker y el workflow de este repositorio permiten publicar Fitora de forma independiente en una VPS: el contenedor escucha en `127.0.0.1:8088` y se actualiza al subir cambios a `main`. Configurá en este repositorio los secretos `VPS_HOST`, `VPS_USER` y `VPS_SSH_KEY_B64` (la clave privada SSH codificada en Base64); `VPS_PORT` es opcional y usa `22` por defecto. El usuario remoto necesita Docker Compose y permiso para ejecutar Docker.
 
 Para usar `https://fitora.fitsystem.com.ar/`, el proxy HTTPS de la VPS debe dirigir ese host al servicio Fitora en el puerto `8088`. El DNS del subdominio debe apuntar a la VPS. Cuando esté online, abrí el dominio en el teléfono y elegí “Agregar a pantalla de inicio”.
 
