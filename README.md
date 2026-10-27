@@ -14,7 +14,7 @@ PWA de entrenamiento en español. Explorá ejercicios, armá rutinas, registrá 
 
 ## Ejecutar e instalar
 
-Abrí `index.html` para una vista local. Para publicarla en GitHub Pages, en el repositorio abrí **Settings → Pages** y elegí **GitHub Actions** como fuente una vez. El workflow de `.github/workflows/deploy.yml` publica automáticamente cada cambio en `main`; la dirección prevista es `https://dcorp-sas.github.io/FITORA/`. Cuando esté online, abrí esa dirección en el teléfono y elegí “Agregar a pantalla de inicio”.
+Abrí `index.html` para una vista local. El dominio elegido es `https://fitora.fitsystem.com.ar/`. Para activarlo, agregalo en **Settings → Pages → Custom domain** y elegí **GitHub Actions** como fuente. En el DNS, el subdominio `fitora` debe tener un `CNAME` hacia `dcorp-sas.github.io`; quitá cualquier registro `A` existente para ese mismo nombre. El workflow de `.github/workflows/deploy.yml` publica los cambios de `main`. Cuando esté online, abrí el dominio en el teléfono y elegí “Agregar a pantalla de inicio”.
 
 ## Datos y atribución
 
