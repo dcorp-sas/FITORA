@@ -8,9 +8,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: deploy-fitora-vps
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Configure SSH
         env:
@@ -21,38 +26,128 @@ jobs:
           VPS_PORT: ${{ secrets.VPS_PORT }}
         run: |
           set -euo pipefail
-          test -n "$VPS_HOST" || { echo "Missing repository secret: VPS_HOST"; exit 1; }
-          test -n "$VPS_USER" || { echo "Missing repository secret: VPS_USER"; exit 1; }
-          test -n "$VPS_SSH_KEY_B64$VPS_SSH_KEY" || { echo "Missing repository secret: VPS_SSH_KEY_B64"; exit 1; }
+          : "${VPS_HOST:?Falta el secreto VPS_HOST}"
+          : "${VPS_USER:?Falta el secreto VPS_USER}"
           VPS_PORT="${VPS_PORT:-22}"
+          umask 077
           install -m 700 -d ~/.ssh
-          if [ -n "$VPS_SSH_KEY_B64" ]; then
+
+          if [ -n "${VPS_SSH_KEY_B64:-}" ]; then
             printf '%s' "$VPS_SSH_KEY_B64" | base64 --decode > ~/.ssh/id_ed25519
-          else
+          elif [ -n "${VPS_SSH_KEY:-}" ]; then
             printf '%s' "$VPS_SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          else
+            echo "::error::Falta el secreto VPS_SSH_KEY_B64 (clave privada SSH en Base64)."
+            exit 1
           fi
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null || {
-            echo "VPS_SSH_KEY is not a readable private key. Check the complete file contents."
+
+          if ! ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub 2>/dev/null; then
+            echo "::error::El secreto no contiene una clave privada SSH legible. Copiala completa, incluyendo las líneas BEGIN y END."
             exit 1
-          }
-          ssh-keygen -y -f ~/.ssh/id_ed25519 | ssh-keygen -lf -
-          ssh-keyscan -p "$VPS_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          echo "VPS_PORT=$VPS_PORT" >> "$GITHUB_ENV"
-          echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
-          echo "VPS_USER=$VPS_USER" >> "$GITHUB_ENV"
+          fi
+
+          FPR="$(ssh-keygen -lf ~/.ssh/id_ed25519.pub | awk '{print $2}')"
+          echo "Huella de la clave: $FPR"
+          echo "Clave pública que debe estar autorizada en el VPS:"
+          cut -d' ' -f1,2 ~/.ssh/id_ed25519.pub
+
+          ssh-keyscan -p "$VPS_PORT" -T 15 -H "$VPS_HOST" > ~/.ssh/known_hosts 2>/dev/null || true
+          if [ ! -s ~/.ssh/known_hosts ]; then
+            echo "::error::No se pudo leer la host key de $VPS_HOST:$VPS_PORT. Revisá el puerto y el firewall."
+            exit 1
+          fi
+
+          {
+            echo "VPS_HOST=$VPS_HOST"
+            echo "VPS_USER=$VPS_USER"
+            echo "VPS_PORT=$VPS_PORT"
+            echo "SSH_KEY_FPR=$FPR"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify SSH access
+        run: |
+          set -euo pipefail
+          if ssh -p "$VPS_PORT" \
+              -o BatchMode=yes \
+              -o IdentitiesOnly=yes \
+              -o PasswordAuthentication=no \
+              -o KbdInteractiveAuthentication=no \
+              -o ConnectTimeout=15 \
+              "$VPS_USER@$VPS_HOST" true; then
+            echo "SSH OK: $VPS_USER@$VPS_HOST:$VPS_PORT con la clave $SSH_KEY_FPR"
+            exit 0
+          fi
+          cat <<EOF
+          ::error::El VPS rechazó la clave $SSH_KEY_FPR para $VPS_USER@$VPS_HOST:$VPS_PORT.
+          Causa habitual: la clave pública de este workflow no está en ~/.ssh/authorized_keys del usuario $VPS_USER.
+          Para repararlo, en el VPS (como $VPS_USER, o como root con el usuario correcto):
+            mkdir -p ~/.ssh && chmod 700 ~/.ssh
+            echo 'PEGAR_AQUI_LA_CLAVE_PUBLICA' >> ~/.ssh/authorized_keys
+            chmod 600 ~/.ssh/authorized_keys
+            chmod 750 ~
+          Y verificá que sshd tenga PubkeyAuthentication yes.
+          Probar desde tu equipo:
+            ssh -i ~/.ssh/fitora-deploy -o IdentitiesOnly=yes $VPS_USER@$VPS_HOST 'echo OK'
+          EOF
+          exit 1
 
       - name: Deploy
         run: |
-          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" 'bash -se' <<'DEPLOY_SCRIPT'
+          set -euo pipefail
+          ssh -p "$VPS_PORT" \
+              -o BatchMode=yes \
+              -o IdentitiesOnly=yes \
+              -o PasswordAuthentication=no \
+              -o ConnectTimeout=15 \
+              "$VPS_USER@$VPS_HOST" 'bash -se' <<'DEPLOY_SCRIPT'
           set -euo pipefail
           APP_DIR="$HOME/fitora"
-          if [ ! -d "$APP_DIR/.git" ]; then
-            git clone --branch main https://github.com/dcorp-sas/FITORA.git "$APP_DIR"
+          REPO_URL="https://github.com/dcorp-sas/FITORA.git"
+
+          if [ -d "$APP_DIR" ] && [ ! -d "$APP_DIR/.git" ]; then
+            echo "ERROR: $APP_DIR existe y no es un repositorio git. Movelo o borralo y reintentá." >&2
+            exit 1
           fi
+          if [ ! -d "$APP_DIR/.git" ]; then
+            mkdir -p "$(dirname "$APP_DIR")"
+            git clone --branch main "$REPO_URL" "$APP_DIR"
+          fi
+
           cd "$APP_DIR"
-          git fetch origin main
+          git remote set-url origin "$REPO_URL"
+          git fetch --prune origin main
           git reset --hard origin/main
-          docker compose -f docker-compose.yml up -d --build --remove-orphans
-          docker compose -f docker-compose.yml ps
+          echo "Desplegando $(git rev-parse --short HEAD) ($(git log -1 --format=%s))"
+
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "ERROR: docker no está instalado en el VPS." >&2
+            exit 1
+          fi
+          DOCKER="docker"
+          if ! docker info >/dev/null 2>&1; then
+            if sudo -n docker info >/dev/null 2>&1; then
+              DOCKER="sudo -n docker"
+            else
+              echo "ERROR: el usuario $USER no puede ejecutar docker (falta el grupo docker o sudo sin contraseña)." >&2
+              exit 1
+            fi
+          fi
+
+          $DOCKER compose -f docker-compose.yml up -d --build --remove-orphans
+          $DOCKER compose -f docker-compose.yml ps
+
+          if command -v curl >/dev/null 2>&1; then
+            for _ in $(seq 1 15); do
+              if curl -fsS -o /dev/null --max-time 3 http://127.0.0.1:8088/; then
+                echo "OK: Fitora responde en 127.0.0.1:8088"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "ERROR: el contenedor no responde en 127.0.0.1:8088" >&2
+            $DOCKER compose -f docker-compose.yml logs --tail=50
+            exit 1
+          fi
+          echo "curl no disponible en el VPS: se omite el smoke test HTTP."
           DEPLOY_SCRIPT
