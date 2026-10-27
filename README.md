@@ -20,7 +20,7 @@ Para usar `https://fitora.fitsystem.com.ar/`, el proxy HTTPS de la VPS debe diri
 
 ## Datos y atribución
 
-El catálogo se obtiene desde [RepDB](https://github.com/RepDB/exercise-dataset) y se mantiene en caché local para uso sin conexión. La licencia del nivel gratuito permite el uso dentro de aplicaciones con atribución. La app muestra **Exercise data by RepDB (repdb.co)**. Ver [licencia del dataset](https://github.com/RepDB/exercise-dataset/blob/main/LICENSE-DATA.md).
+El catálogo se obtiene desde [RepDB](https://github.com/RepDB/exercise-dataset) y se mantiene en caché local para uso sin conexión. La licencia del nivel gratuito permite el uso dentro de aplicaciones con atribución. Atribución: [Exercise data by RepDB (repdb.co)](https://repdb.co/). Ver [licencia del dataset](https://github.com/RepDB/exercise-dataset/blob/main/LICENSE-DATA.md).
 
 Los registros de entrenamiento y rutinas permanecen en el dispositivo. Usá “Exportar copia” para guardarlos y “Importar copia” para restaurarlos o combinarlos con los datos actuales. Las instrucciones de ejercicios son informativas y no reemplazan asesoramiento profesional.
 
