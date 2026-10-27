@@ -25,8 +25,12 @@ jobs:
           test -n "$VPS_SSH_KEY" || { echo "Missing repository secret: VPS_SSH_KEY"; exit 1; }
           VPS_PORT="${VPS_PORT:-22}"
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s' "$VPS_SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null || {
+            echo "VPS_SSH_KEY is not a readable private key. Check the complete file contents."
+            exit 1
+          }
           ssh-keyscan -p "$VPS_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts
           echo "VPS_PORT=$VPS_PORT" >> "$GITHUB_ENV"
           echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
