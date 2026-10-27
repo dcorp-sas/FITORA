@@ -14,7 +14,7 @@ PWA de entrenamiento en español. Explorá ejercicios, armá rutinas, registrá 
 
 ## Ejecutar e instalar
 
-Abrí `index.html` para una vista local. El dominio elegido es `https://fitora.fitsystem.com.ar/`. Para activarlo, agregalo en **Settings → Pages → Custom domain** y elegí **GitHub Actions** como fuente. En el DNS, el subdominio `fitora` debe tener un `CNAME` hacia `dcorp-sas.github.io`; quitá cualquier registro `A` existente para ese mismo nombre. El workflow de `.github/workflows/deploy.yml` publica los cambios de `main`. Cuando esté online, abrí el dominio en el teléfono y elegí “Agregar a pantalla de inicio”.
+Abrí `index.html` para una vista local. La app se sirve en `https://fitora.fitsystem.com.ar/` desde el VPS del proyecto FITsystem. El repositorio incluye un `Dockerfile` para Nginx; FITsystem lo consume como submódulo y Caddy enruta el subdominio. El DNS existente apunta al VPS y no necesita cambiarse. Cuando esté online, abrí el dominio en el teléfono y elegí “Agregar a pantalla de inicio”.
 
 ## Datos y atribución
 
