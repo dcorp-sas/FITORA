@@ -14,7 +14,7 @@ PWA de entrenamiento en español. Explorá ejercicios, armá rutinas, registrá 
 
 ## Ejecutar e instalar
 
-Abrí `index.html` para una vista local. Para instalar la PWA, publicá la carpeta desde un origen HTTPS y elegí “Agregar a pantalla de inicio” en el navegador del teléfono. El workflow de GitHub Pages en `.github/workflows/deploy.yml` publica automáticamente cada cambio en `main` cuando Pages está configurado para usar GitHub Actions.
+Abrí `index.html` para una vista local. Para publicarla en GitHub Pages, en el repositorio abrí **Settings → Pages** y elegí **GitHub Actions** como fuente una vez. El workflow de `.github/workflows/deploy.yml` publica automáticamente cada cambio en `main`; la dirección prevista es `https://dcorp-sas.github.io/FITORA/`. Cuando esté online, abrí esa dirección en el teléfono y elegí “Agregar a pantalla de inicio”.
 
 ## Datos y atribución
 
