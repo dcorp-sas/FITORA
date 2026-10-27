@@ -120,6 +120,13 @@ jobs:
           git reset --hard origin/main
           echo "Desplegando $(git rev-parse --short HEAD) ($(git log -1 --format=%s))"
 
+          # El proxy Caddy vive en otro contenedor: hay que publicar en el gateway
+          # de docker (172.17.0.1) y no en loopback. El archivo es local al servidor
+          # y no se versiona, así que sobrevive a los git reset.
+          if [ ! -f .env ]; then
+            printf 'FITORA_BIND_IP=172.17.0.1\nFITORA_PORT=8088\n' > .env
+          fi
+
           if ! command -v docker >/dev/null 2>&1; then
             echo "ERROR: docker no está instalado en el VPS." >&2
             exit 1
@@ -138,14 +145,17 @@ jobs:
           $DOCKER compose -f docker-compose.yml ps
 
           if command -v curl >/dev/null 2>&1; then
+            BIND="$(docker compose port fitora 80 2>/dev/null | head -1)"
+            BIND="${BIND:-172.17.0.1:8088}"
+            echo "Comprobando http://$BIND/"
             for _ in $(seq 1 15); do
-              if curl -fsS -o /dev/null --max-time 3 http://127.0.0.1:8088/; then
-                echo "OK: Fitora responde en 127.0.0.1:8088"
+              if curl -fsS -o /dev/null --max-time 3 "http://$BIND/" 2>/dev/null; then
+                echo "OK: Fitora responde en $BIND"
                 exit 0
               fi
               sleep 2
             done
-            echo "ERROR: el contenedor no responde en 127.0.0.1:8088" >&2
+            echo "ERROR: el contenedor no responde en $BIND" >&2
             $DOCKER compose -f docker-compose.yml logs --tail=50
             exit 1
           fi

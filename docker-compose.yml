@@ -2,5 +2,8 @@ services:
   fitora:
     build: .
     restart: unless-stopped
+    # El contenedor solo expone el puerto en el host; el edge (Caddy) hace el TLS.
+    # En el VPS se sobreescribe con FITORA_BIND_IP=172.17.0.1 (gateway de docker)
+    # porque Caddy corre en otro contenedor y necesita alcanzar este puerto.
     ports:
-      - "127.0.0.1:8088:80"
+      - "${FITORA_BIND_IP:-127.0.0.1}:${FITORA_PORT:-8088}:80"
