@@ -98,6 +98,7 @@ jobs:
           MP_ACCESS_TOKEN: ${{ secrets.MP_ACCESS_TOKEN }}
           MP_WEBHOOK_SECRET: ${{ secrets.MP_WEBHOOK_SECRET }}
           FITORA_PREMIUM_PRICE_ARS: ${{ vars.FITORA_PREMIUM_PRICE_ARS }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
         run: |
           set -euo pipefail
           umask 077
@@ -107,6 +108,7 @@ jobs:
           [ -z "${MP_ACCESS_TOKEN:-}" ] || printf 'MP_ACCESS_TOKEN=%s\n' "$MP_ACCESS_TOKEN" >> "$config"
           [ -z "${MP_WEBHOOK_SECRET:-}" ] || printf 'MP_WEBHOOK_SECRET=%s\n' "$MP_WEBHOOK_SECRET" >> "$config"
           [ -z "${FITORA_PREMIUM_PRICE_ARS:-}" ] || printf 'FITORA_PREMIUM_PRICE_ARS=%s\n' "$FITORA_PREMIUM_PRICE_ARS" >> "$config"
+          [ -z "${GOOGLE_CLIENT_ID:-}" ] || printf 'GOOGLE_CLIENT_ID=%s\n' "$GOOGLE_CLIENT_ID" >> "$config"
           if [ -s "$config" ]; then
             ssh -p "$VPS_PORT" -o BatchMode=yes -o IdentitiesOnly=yes -o PasswordAuthentication=no \
               "$VPS_USER@$VPS_HOST" 'umask 077; cat > ~/.fitora-premium-runtime.env' < "$config"
@@ -152,7 +154,7 @@ jobs:
 
           if [ -f "$HOME/.fitora-premium-runtime.env" ]; then
             chmod 600 "$HOME/.fitora-premium-runtime.env"
-            for key in MP_PUBLIC_KEY MP_ACCESS_TOKEN MP_WEBHOOK_SECRET FITORA_PREMIUM_PRICE_ARS; do
+            for key in MP_PUBLIC_KEY MP_ACCESS_TOKEN MP_WEBHOOK_SECRET FITORA_PREMIUM_PRICE_ARS GOOGLE_CLIENT_ID; do
               if grep -q "^$key=" "$HOME/.fitora-premium-runtime.env"; then
                 grep -v "^$key=" .env > .env.fitora-new || true
                 grep "^$key=" "$HOME/.fitora-premium-runtime.env" >> .env.fitora-new

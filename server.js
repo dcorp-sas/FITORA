@@ -32,6 +32,10 @@ db.exec(`
     encrypted_payload TEXT NOT NULL, updated_at TEXT NOT NULL
   );
 `);
+if (!db.prepare('PRAGMA table_info(users)').all().some(column => column.name === 'google_sub')) {
+  db.exec('ALTER TABLE users ADD COLUMN google_sub TEXT');
+}
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub_unique ON users(google_sub) WHERE google_sub IS NOT NULL');
 try { fs.chmodSync(path.join(DATA_DIR, 'fitora.sqlite'), 0o600); } catch {}
 
 function loadEncryptionKey() {
@@ -107,7 +111,41 @@ function premiumConfig() {
   const price = Number(process.env.FITORA_PREMIUM_PRICE_ARS || 0);
   const publicKey = String(process.env.MP_PUBLIC_KEY || '').trim();
   const enabled = Boolean(publicKey && process.env.MP_ACCESS_TOKEN && process.env.MP_WEBHOOK_SECRET && Number.isFinite(price) && price > 0);
-  return { checkoutEnabled: enabled, publicKey: enabled ? publicKey : '', amount: enabled ? price : 0, currency: 'ARS', frequency: 'mensual' };
+  return { checkoutEnabled: enabled, publicKey: enabled ? publicKey : '', amount: enabled ? price : 0, currency: 'ARS', frequency: 'mensual', googleClientId: String(process.env.GOOGLE_CLIENT_ID || '').trim() };
+}
+let googleKeys = null;
+let googleKeysExpiresAt = 0;
+async function verifyGoogleCredential(token, expectedNonce) {
+  if (!process.env.GOOGLE_CLIENT_ID) throw Object.assign(new Error('El acceso con Google todavía no está configurado.'), { status: 503 });
+  if (typeof token !== 'string' || token.length > 10000) throw Object.assign(new Error('Credencial de Google inválida.'), { status: 401 });
+  const parts = token.split('.');
+  if (parts.length !== 3) throw Object.assign(new Error('Credencial de Google inválida.'), { status: 401 });
+  let header, claims, signature;
+  try {
+    header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    signature = Buffer.from(parts[2], 'base64url');
+  } catch { throw Object.assign(new Error('Credencial de Google inválida.'), { status: 401 }); }
+  if (header.alg !== 'RS256' || !header.kid || !signature.length) throw Object.assign(new Error('Credencial de Google inválida.'), { status: 401 });
+  if (!googleKeys || Date.now() >= googleKeysExpiresAt) {
+    const response = await fetch('https://www.googleapis.com/oauth2/v3/certs', { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw Object.assign(new Error('No se pudo validar la cuenta de Google.'), { status: 502 });
+    const data = await response.json();
+    googleKeys = data.keys || [];
+    const maxAge = Number(response.headers.get('cache-control')?.match(/max-age=(\d+)/)?.[1] || 300);
+    googleKeysExpiresAt = Date.now() + Math.min(maxAge, 86400) * 1000;
+  }
+  const jwk = googleKeys.find(key => key.kid === header.kid && key.alg === 'RS256');
+  if (!jwk) throw Object.assign(new Error('Credencial de Google vencida; volvé a intentarlo.'), { status: 401 });
+  const signingInput = Buffer.from(`${parts[0]}.${parts[1]}`);
+  let validSignature = false;
+  try { validSignature = crypto.verify('RSA-SHA256', signingInput, crypto.createPublicKey({ key: jwk, format: 'jwk' }), signature); } catch {}
+  const now = Math.floor(Date.now() / 1000);
+  const aud = Array.isArray(claims.aud) ? claims.aud.includes(process.env.GOOGLE_CLIENT_ID) : claims.aud === process.env.GOOGLE_CLIENT_ID;
+  if (!validSignature || !aud || (claims.azp && claims.azp !== process.env.GOOGLE_CLIENT_ID) || !['accounts.google.com', 'https://accounts.google.com'].includes(claims.iss) || !claims.exp || claims.exp <= now || (claims.iat && claims.iat > now + 60) || claims.nonce !== expectedNonce || claims.email_verified !== true || typeof claims.sub !== 'string' || typeof claims.email !== 'string') {
+    throw Object.assign(new Error('No se pudo verificar tu cuenta de Google.'), { status: 401 });
+  }
+  return { sub: claims.sub, email: claims.email.trim().toLowerCase() };
 }
 function encryptBackup(value) {
   const iv = crypto.randomBytes(12);
@@ -220,6 +258,40 @@ const server = http.createServer(async (req, res) => {
       catch { return json(res, 409, { error: 'Ya existe una cuenta con ese email.' }); }
       signIn(res, id);
       return json(res, 201, { user: { id, email, premium: false, subscriptionStatus: 'none' } });
+    }
+    if (url.pathname === '/api/auth/google/nonce' && req.method === 'GET') {
+      if (!process.env.GOOGLE_CLIENT_ID) return json(res, 503, { error: 'El acceso con Google todavía no está configurado.' });
+      const nonce = crypto.randomBytes(32).toString('base64url');
+      res.setHeader('Set-Cookie', `fitora_google_nonce=${encodeURIComponent(nonce)}; Path=/api; HttpOnly; Secure; SameSite=Lax; Max-Age=300`);
+      return json(res, 200, { nonce });
+    }
+    if (url.pathname === '/api/auth/google' && req.method === 'POST') {
+      res.setHeader('Set-Cookie', 'fitora_google_nonce=; Path=/api; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
+      const data = await bodyJson(req);
+      const identity = await verifyGoogleCredential(data.credential, cookieValue(req, 'fitora_google_nonce'));
+      let account = db.prepare('SELECT id,email,google_sub FROM users WHERE google_sub = ?').get(identity.sub);
+      if (!account) {
+        account = db.prepare('SELECT id,email,google_sub FROM users WHERE email = ?').get(identity.email);
+        if (account?.google_sub && account.google_sub !== identity.sub) return json(res, 409, { error: 'Esta cuenta de Fitora ya está vinculada a otro Google.' });
+        if (account) {
+          db.prepare('UPDATE users SET google_sub = ? WHERE id = ?').run(identity.sub, account.id);
+        } else {
+          const id = crypto.randomUUID();
+          const inaccessiblePassword = crypto.randomBytes(64).toString('hex');
+          const salt = crypto.randomBytes(16).toString('hex');
+          const passwordHash = crypto.scryptSync(inaccessiblePassword, salt, 64).toString('hex');
+          try {
+            db.prepare('INSERT INTO users (id,email,password_salt,password_hash,created_at,google_sub) VALUES (?,?,?,?,?,?)')
+              .run(id, identity.email, salt, passwordHash, new Date().toISOString(), identity.sub);
+          } catch {
+            return json(res, 409, { error: 'No se pudo crear la cuenta con Google. Probá iniciar sesión nuevamente.' });
+          }
+          account = { id, email: identity.email, google_sub: identity.sub };
+        }
+      }
+      signIn(res, account.id);
+      const current = findUser(cookieValue(req, COOKIE));
+      return json(res, 200, { user: current || { id: account.id, email: account.email, premium: false, subscriptionStatus: 'none' } });
     }
     if (url.pathname === '/api/auth/login' && req.method === 'POST') {
       const data = await bodyJson(req);
