@@ -17,7 +17,8 @@ db.exec(`
   PRAGMA foreign_keys = ON;
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_salt TEXT NOT NULL,
-    password_hash TEXT NOT NULL, created_at TEXT NOT NULL
+    password_hash TEXT NOT NULL, created_at TEXT NOT NULL,
+    registration_status TEXT NOT NULL DEFAULT 'active', registration_expires_at INTEGER
   );
   CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -34,6 +35,18 @@ db.exec(`
 `);
 if (!db.prepare('PRAGMA table_info(users)').all().some(column => column.name === 'google_sub')) {
   db.exec('ALTER TABLE users ADD COLUMN google_sub TEXT');
+}
+const hadRegistrationStatus = db.prepare('PRAGMA table_info(users)').all().some(column => column.name === 'registration_status');
+if (!hadRegistrationStatus) {
+  db.exec("ALTER TABLE users ADD COLUMN registration_status TEXT NOT NULL DEFAULT 'active'");
+}
+if (!db.prepare('PRAGMA table_info(users)').all().some(column => column.name === 'registration_expires_at')) {
+  db.exec('ALTER TABLE users ADD COLUMN registration_expires_at INTEGER');
+}
+if (!hadRegistrationStatus) {
+  db.prepare(`UPDATE users SET registration_status='pending', registration_expires_at=?
+    WHERE NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id=users.id AND s.status='authorized')`)
+    .run(Date.now() + 24 * 60 * 60 * 1000);
 }
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub_unique ON users(google_sub) WHERE google_sub IS NOT NULL');
 try { fs.chmodSync(path.join(DATA_DIR, 'fitora.sqlite'), 0o600); } catch {}
@@ -79,14 +92,19 @@ function clearSessionCookie(res) {
 }
 function safeUser(row) {
   if (!row) return null;
-  return { id: row.id, email: row.email, premium: row.subscription_status === 'authorized', subscriptionStatus: row.subscription_status || 'none' };
+  return { id: row.id, email: row.email, premium: row.subscription_status === 'authorized', subscriptionStatus: row.subscription_status || 'none', registrationPending: row.registration_status === 'pending' };
 }
 function findUser(token) {
   if (!token) return null;
-  const row = db.prepare(`SELECT u.id, u.email, s.status AS subscription_status
+  const row = db.prepare(`SELECT u.id, u.email, u.registration_status, s.status AS subscription_status
     FROM sessions a JOIN users u ON u.id = a.user_id
     LEFT JOIN subscriptions s ON s.user_id = u.id
     WHERE a.token_hash = ? AND a.expires_at > ?`).get(hashToken(token), Date.now());
+  return safeUser(row);
+}
+function findUserForAccount(userId) {
+  const row = db.prepare(`SELECT u.id, u.email, u.registration_status, s.status AS subscription_status
+    FROM users u LEFT JOIN subscriptions s ON s.user_id = u.id WHERE u.id = ?`).get(userId);
   return safeUser(row);
 }
 function sameOrigin(req) {
@@ -161,6 +179,30 @@ function decryptBackup(value) {
   return JSON.parse(Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8'));
 }
 function statusIsPremium(status) { return status === 'authorized'; }
+const PENDING_SIGNUP_MS = 24 * 60 * 60 * 1000;
+const PAYMENT_PENDING_SIGNUP_MS = 24 * 60 * 60 * 1000;
+async function expirePendingSignups() {
+  const expired = db.prepare("SELECT id FROM users WHERE registration_status = 'pending' AND registration_expires_at IS NOT NULL AND registration_expires_at <= ?").all(Date.now());
+  for (const account of expired) {
+    const subscription = db.prepare('SELECT preapproval_id,status FROM subscriptions WHERE user_id=?').get(account.id);
+    if (subscription?.status === 'creating') continue;
+    if (subscription?.preapproval_id && !['canceled','cancelled','rejected','failed'].includes(subscription.status)) {
+      try {
+        await mercadoPago(`/preapproval/${encodeURIComponent(subscription.preapproval_id)}`, { method: 'PUT', body: JSON.stringify({ status: 'canceled' }) });
+        db.prepare("UPDATE subscriptions SET status='canceled',updated_at=? WHERE user_id=?").run(new Date().toISOString(), account.id);
+      } catch { continue; }
+    }
+    db.prepare("DELETE FROM users WHERE id=? AND registration_status='pending'").run(account.id);
+  }
+}
+function startPendingSignup(userId, duration = PENDING_SIGNUP_MS) {
+  db.prepare("UPDATE users SET registration_status = 'pending', registration_expires_at = ? WHERE id = ?")
+    .run(Date.now() + duration, userId);
+}
+function activateRegistration(userId) {
+  db.prepare("UPDATE users SET registration_status = 'active', registration_expires_at = NULL WHERE id = ?")
+    .run(userId);
+}
 function signIn(res, userId) {
   const token = crypto.randomBytes(32).toString('base64url');
   const maxAge = 30 * 24 * 60 * 60;
@@ -228,7 +270,12 @@ async function handleWebhook(req, res, url) {
     db.prepare(`INSERT INTO subscriptions (user_id,preapproval_id,status,updated_at) VALUES (?,?,?,?)
       ON CONFLICT(user_id) DO UPDATE SET preapproval_id=excluded.preapproval_id,status=excluded.status,updated_at=excluded.updated_at`)
       .run(userId, String(subscription.id), String(subscription.status || 'pending'), new Date().toISOString());
-    if (!statusIsPremium(subscription.status)) db.prepare('DELETE FROM backups WHERE user_id = ?').run(userId);
+    if (statusIsPremium(subscription.status)) activateRegistration(userId);
+    else {
+      db.prepare('DELETE FROM backups WHERE user_id = ?').run(userId);
+      db.prepare("UPDATE users SET registration_expires_at = ? WHERE id = ? AND registration_status = 'pending'")
+        .run(Date.now() + PAYMENT_PENDING_SIGNUP_MS, userId);
+    }
     return json(res, 200, { received: true });
   } catch (error) {
     console.error('Mercado Pago webhook sync failed', error.status || 'error');
@@ -243,21 +290,23 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   if (url.pathname.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
   try {
+    await expirePendingSignups();
     if (url.pathname === '/api/health' && req.method === 'GET') return json(res, 200, { ok: true });
     if (url.pathname === '/api/config' && req.method === 'GET') return json(res, 200, premiumConfig());
     if (url.pathname === '/api/webhooks/mercadopago' && req.method === 'POST') return await handleWebhook(req, res, url);
 
     if (url.pathname.startsWith('/api/') && !sameOrigin(req)) return json(res, 403, { error: 'Origen no permitido' });
     if (url.pathname === '/api/auth/register' && req.method === 'POST') {
+      if (!premiumConfig().checkoutEnabled) return json(res, 503, { error: 'El registro con cuenta requiere que el pago mensual esté habilitado. Podés seguir usando Fitora localmente por ahora.' });
       const data = await bodyJson(req);
       const email = String(data.email || '').trim().toLowerCase();
       const password = readPassword(data.password);
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || !password) return json(res, 400, { error: 'Ingresá un email válido y una contraseña de al menos 10 caracteres.' });
       const id = crypto.randomUUID();
-      try { db.prepare('INSERT INTO users (id,email,password_salt,password_hash,created_at) VALUES (?,?,?,?,?)').run(id,email,password.salt,password.hash,new Date().toISOString()); }
+      try { db.prepare("INSERT INTO users (id,email,password_salt,password_hash,created_at,registration_status,registration_expires_at) VALUES (?,?,?, ?,?,'pending',?)").run(id,email,password.salt,password.hash,new Date().toISOString(),Date.now()+PENDING_SIGNUP_MS); }
       catch { return json(res, 409, { error: 'Ya existe una cuenta con ese email.' }); }
       signIn(res, id);
-      return json(res, 201, { user: { id, email, premium: false, subscriptionStatus: 'none' } });
+      return json(res, 201, { user: { id, email, premium: false, subscriptionStatus: 'none', registrationPending: true } });
     }
     if (url.pathname === '/api/auth/google/nonce' && req.method === 'GET') {
       if (!process.env.GOOGLE_CLIENT_ID) return json(res, 503, { error: 'El acceso con Google todavía no está configurado.' });
@@ -276,18 +325,24 @@ const server = http.createServer(async (req, res) => {
         if (account) {
           db.prepare('UPDATE users SET google_sub = ? WHERE id = ?').run(identity.sub, account.id);
         } else {
+          if (!premiumConfig().checkoutEnabled) return json(res, 503, { error: 'El registro con cuenta requiere que el pago mensual esté habilitado. Podés seguir usando Fitora localmente por ahora.' });
           const id = crypto.randomUUID();
           const inaccessiblePassword = crypto.randomBytes(64).toString('hex');
           const salt = crypto.randomBytes(16).toString('hex');
           const passwordHash = crypto.scryptSync(inaccessiblePassword, salt, 64).toString('hex');
           try {
-            db.prepare('INSERT INTO users (id,email,password_salt,password_hash,created_at,google_sub) VALUES (?,?,?,?,?,?)')
-              .run(id, identity.email, salt, passwordHash, new Date().toISOString(), identity.sub);
+            db.prepare("INSERT INTO users (id,email,password_salt,password_hash,created_at,google_sub,registration_status,registration_expires_at) VALUES (?,?,?,?,?,?, 'pending', ?)")
+              .run(id, identity.email, salt, passwordHash, new Date().toISOString(), identity.sub, Date.now()+PENDING_SIGNUP_MS);
           } catch {
             return json(res, 409, { error: 'No se pudo crear la cuenta con Google. Probá iniciar sesión nuevamente.' });
           }
           account = { id, email: identity.email, google_sub: identity.sub };
         }
+      }
+      const currentAccount = findUserForAccount(account.id);
+      if (currentAccount?.registrationPending) {
+        if (!premiumConfig().checkoutEnabled) return json(res, 503, { error: 'El pago mensual está temporalmente deshabilitado. No se inició ni se cobró ninguna suscripción.' });
+        startPendingSignup(account.id);
       }
       signIn(res, account.id);
       const current = findUser(cookieValue(req, COOKIE));
@@ -298,6 +353,10 @@ const server = http.createServer(async (req, res) => {
       const email = String(data.email || '').trim().toLowerCase();
       const user = db.prepare('SELECT id,email,password_salt,password_hash FROM users WHERE email = ?').get(email);
       if (!user || !validPassword(data.password, user.password_salt, user.password_hash)) return json(res, 401, { error: 'Email o contraseña incorrectos.' });
+      if (findUserForAccount(user.id)?.registrationPending) {
+        if (!premiumConfig().checkoutEnabled) return json(res, 503, { error: 'El pago mensual está temporalmente deshabilitado. No se inició ni se cobró ninguna suscripción.' });
+        startPendingSignup(user.id);
+      }
       signIn(res, user.id);
       return json(res, 200, { user: findUser(cookieValue(req, COOKIE)) || { id: user.id, email: user.email, premium: false, subscriptionStatus: 'none' } });
     }
@@ -309,6 +368,18 @@ const server = http.createServer(async (req, res) => {
     }
     const user = findUser(cookieValue(req, COOKIE));
     if (url.pathname === '/api/auth/me' && req.method === 'GET') return json(res, 200, { user });
+    if (url.pathname === '/api/auth/cancel-registration' && req.method === 'POST') {
+      if (!user) return json(res, 401, { error: 'Iniciá sesión para cancelar el registro.' });
+      if (!user.registrationPending) return json(res, 409, { error: 'Este registro ya fue confirmado.' });
+      const subscription = db.prepare('SELECT preapproval_id,status FROM subscriptions WHERE user_id=?').get(user.id);
+      if (subscription?.status === 'creating') return json(res, 409, { error: 'Mercado Pago todavía está procesando el pago. Esperá un momento e intentá cancelar de nuevo.' });
+      if (subscription?.preapproval_id && !['canceled','cancelled','rejected','failed'].includes(subscription.status)) {
+        await mercadoPago(`/preapproval/${encodeURIComponent(subscription.preapproval_id)}`, { method: 'PUT', body: JSON.stringify({ status: 'canceled' }) });
+      }
+      db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+      clearSessionCookie(res);
+      return json(res, 200, { ok: true });
+    }
 
     if (url.pathname === '/api/subscription' && req.method === 'POST') {
       if (!user) return json(res, 401, { error: 'Iniciá sesión para contratar Fitora Premium.' });
@@ -317,7 +388,7 @@ const server = http.createServer(async (req, res) => {
       if (user.premium) return json(res, 200, { status: 'authorized' });
       const data = await bodyJson(req);
       const cardToken = String(data.token || '');
-      if (!cardToken || cardToken.length > 300 || data.cloudConsent !== true) return json(res, 400, { error: 'Confirmá el respaldo en la VPS y completá el pago embebido.' });
+      if (!cardToken || cardToken.length > 300 || data.monthlyConsent !== true || data.cloudConsent !== true) return json(res, 400, { error: 'Aceptá la suscripción mensual y el respaldo cifrado para continuar.' });
       const payerEmail = String(data.payerEmail || user.email).trim().toLowerCase();
       if (payerEmail !== user.email) return json(res, 400, { error: 'El email del pagador debe coincidir con el de tu cuenta Fitora.' });
       const existing = db.prepare('SELECT status FROM subscriptions WHERE user_id = ?').get(user.id);
@@ -349,6 +420,9 @@ const server = http.createServer(async (req, res) => {
       db.prepare(`UPDATE subscriptions SET preapproval_id=?,status=?,updated_at=? WHERE user_id=? AND status='creating'`)
         .run(String(subscription.id || ''), String(subscription.status || 'pending'), new Date().toISOString(), user.id);
       const finalStatus = db.prepare('SELECT status FROM subscriptions WHERE user_id=?').get(user.id)?.status || subscription.status || 'pending';
+      if (statusIsPremium(finalStatus)) activateRegistration(user.id);
+      else db.prepare("UPDATE users SET registration_expires_at = ? WHERE id = ? AND registration_status = 'pending'")
+        .run(Date.now() + PAYMENT_PENDING_SIGNUP_MS, user.id);
       return json(res, 200, { status: String(finalStatus), premium: statusIsPremium(finalStatus) });
     }
     if (url.pathname === '/api/subscription/cancel' && req.method === 'POST') {
@@ -405,5 +479,8 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+expirePendingSignups().catch(() => {});
+const signupCleanupTimer = setInterval(() => expirePendingSignups().catch(() => {}), 60 * 1000);
+signupCleanupTimer.unref();
 server.listen(PORT, '0.0.0.0', () => console.log(`Fitora server listening on ${PORT}`));
-for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { server.close(() => { db.close(); process.exit(0); }); });
+for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { clearInterval(signupCleanupTimer); server.close(() => { db.close(); process.exit(0); }); });
