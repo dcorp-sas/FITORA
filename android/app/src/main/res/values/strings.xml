@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Fitora</string>
+    <string name="title_activity_main">Fitora</string>
+    <string name="package_name">com.fitora.app</string>
+    <string name="custom_url_scheme">com.fitora.app</string>
+    <string name="health_connect_privacy_policy_url">https://fitora.fitsystem.com.ar/privacypolicy.html</string>
+</resources>

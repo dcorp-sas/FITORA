@@ -1,0 +1,25 @@
+{
+  "name": "fitora-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Contenedor nativo de Fitora con integración de Salud",
+  "scripts": {
+    "build:native-health": "node scripts/build-native-health.mjs",
+    "cap:add:android": "npm run build:native-health && cap add android",
+    "cap:add:ios": "npm run build:native-health && cap add ios",
+    "cap:sync": "npm run build:native-health && node scripts/cap-sync.mjs",
+    "cap:open:android": "cap open android",
+    "cap:open:ios": "cap open ios"
+  },
+  "dependencies": {
+    "@capgo/capacitor-health": "^8.11.13",
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3"
+  }
+}

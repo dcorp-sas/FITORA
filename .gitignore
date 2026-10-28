@@ -3,4 +3,5 @@
 !.env.example
 data/
 node_modules/
+www/
 npm-debug.log*

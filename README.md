@@ -40,3 +40,22 @@ La URL para notificaciones es `https://fitora.fitsystem.com.ar/api/webhooks/merc
 
 Las instrucciones de ejercicios son informativas y no reemplazan asesoramiento profesional.
 
+
+## Entrenamiento extendido y apps nativas
+
+Fitora incluye ciclos adaptativos de 4 semanas con descarga y regreso gradual después de pausas, reprogramación desde el calendario, edición del historial, registro de cardio por tiempo/distancia, avisos de récords, cálculo de calentamiento y discos. Las preferencias del ciclo y las fechas programadas se incluyen en el respaldo Premium; las fotos siguen locales.
+
+La app nativa usa Capacitor y `@capgo/capacitor-health` para importar entrenamientos autorizados desde Apple Health y Health Connect. Las actividades que un reloj haya sincronizado con esos servicios aparecen en el historial de Fitora. La conexión pide solo permiso de lectura de entrenamientos. La PWA sigue funcionando sin Salud.
+
+### Preparar Android o iOS
+
+Requiere Node.js 22 o posterior. Después de clonar el repositorio:
+
+```sh
+npm ci
+npm run cap:sync
+```
+
+El comando genera el bundle de Salud, actualiza Android/iOS y configura la app para cargar la versión publicada de Fitora. Abrí `android/` con Android Studio para compilar Android; abrí `ios/App/App.xcworkspace` con Xcode en macOS para compilar iOS. Apple requiere equipo de firma/desarrollador y HealthKit activado para distribuir la app.
+
+La integración importa entrenamientos ya registrados por el reloj o por otras apps en Salud; Fitora todavía no incluye una app de muñeca independiente para registrar cada serie desde Apple Watch o Wear OS.

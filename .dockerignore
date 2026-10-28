@@ -1,0 +1,11 @@
+.git
+.github
+node_modules
+www
+android
+ios
+scripts
+capacitor.config.ts
+native-health-entry.js
+package.json
+package-lock.json

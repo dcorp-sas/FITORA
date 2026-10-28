@@ -1,7 +1,7 @@
 FROM node:24-alpine
 ENV NODE_ENV=production PORT=80 FITORA_DATA_DIR=/data
 WORKDIR /app
-COPY index.html app.css app.js enhancements.js manifest.webmanifest sw.js icon.svg icon-192.png icon-512.png server.js ./
+COPY index.html app.css app.js enhancements.js fitora-plus.js fitora-full.js native-health.js privacy-policy.html privacypolicy.html manifest.webmanifest sw.js icon.svg icon-192.png icon-512.png server.js ./
 RUN mkdir -p /data && chown -R node:node /app /data
 USER node
 VOLUME ["/data"]
