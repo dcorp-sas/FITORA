@@ -108,7 +108,7 @@ async function bodyJson(req) {
   catch { throw Object.assign(new Error('Invalid JSON'), { status: 400 }); }
 }
 function premiumConfig() {
-  const price = Number(process.env.FITORA_PREMIUM_PRICE_ARS || 0);
+  const price = Number(process.env.FITORA_PREMIUM_PRICE_ARS || '10000');
   const publicKey = String(process.env.MP_PUBLIC_KEY || '').trim();
   const enabled = Boolean(publicKey && process.env.MP_ACCESS_TOKEN && process.env.MP_WEBHOOK_SECRET && Number.isFinite(price) && price > 0);
   return { checkoutEnabled: enabled, publicKey: enabled ? publicKey : '', amount: enabled ? price : 0, currency: 'ARS', frequency: 'mensual', googleClientId: String(process.env.GOOGLE_CLIENT_ID || '').trim() };

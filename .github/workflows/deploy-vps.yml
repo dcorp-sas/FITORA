@@ -97,7 +97,7 @@ jobs:
           MP_PUBLIC_KEY: ${{ vars.MP_PUBLIC_KEY }}
           MP_ACCESS_TOKEN: ${{ secrets.MP_ACCESS_TOKEN }}
           MP_WEBHOOK_SECRET: ${{ secrets.MP_WEBHOOK_SECRET }}
-          FITORA_PREMIUM_PRICE_ARS: ${{ vars.FITORA_PREMIUM_PRICE_ARS }}
+          FITORA_PREMIUM_PRICE_ARS: ${{ vars.FITORA_PREMIUM_PRICE_ARS || '10000' }}
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID || secrets.GOOGLE_CLIENT_ID }}
         run: |
           set -euo pipefail

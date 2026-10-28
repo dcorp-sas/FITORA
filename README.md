@@ -28,12 +28,12 @@ El catálogo se obtiene desde [RepDB](https://github.com/RepDB/exercise-dataset)
 
 El plan gratuito guarda los datos solamente en el dispositivo, igual que antes. La cuenta es opcional y se puede crear con email/contraseña o iniciar sesión con Google. Google se usa solo para identificar la cuenta de Fitora; no se solicita acceso a Drive. El respaldo de la VPS se habilita únicamente cuando Mercado Pago confirma una suscripción Premium activa; entonces se sincronizan entrenamientos, rutinas, perfil, mediciones y ejercicios propios. La copia se cifra en reposo en la VPS. Al cancelar la suscripción se elimina la copia remota y los datos locales no se borran. Se puede exportar un JSON local desde Progreso.
 
-El cobro se plantea como mensual en pesos argentinos y se configura por entorno: el checkout queda apagado si falta el precio o cualquiera de las credenciales. El Card Payment Brick muestra el formulario dentro de Fitora; el navegador solo entrega al backend el token de tarjeta. No se reciben ni guardan datos de tarjeta en la app. Configurá en **Settings → Secrets and variables → Actions** del repositorio:
+El cobro es mensual en pesos argentinos, con precio predeterminado de AR$ 10.000 (editable con `FITORA_PREMIUM_PRICE_ARS`). El checkout queda apagado si faltan las credenciales de Mercado Pago. El Card Payment Brick muestra el formulario dentro de Fitora; el navegador solo entrega al backend el token de tarjeta. No se reciben ni guardan datos de tarjeta en la app. Configurá en **Settings → Secrets and variables → Actions** del repositorio:
 
 - Variable `MP_PUBLIC_KEY` (clave pública de producción).
 - Secret `MP_ACCESS_TOKEN` (Access Token de producción; no es el Client ID ni el Client Secret).
 - Secret `MP_WEBHOOK_SECRET` (clave de firma creada en la configuración de webhooks de Mercado Pago).
-- Variable `FITORA_PREMIUM_PRICE_ARS` (precio mensual en ARS, mayor que cero).
+- Variable opcional `FITORA_PREMIUM_PRICE_ARS` (precio mensual en ARS; predeterminado: `10000`).
 - Variable `GOOGLE_CLIENT_ID` (ID del cliente OAuth web; permite iniciar sesión con Google, sin acceso a Drive).
 
 La URL para notificaciones es `https://fitora.fitsystem.com.ar/api/webhooks/mercadopago`. Configurá el evento de suscripción/preapproval. El workflow de despliegue transfiere estos valores de Actions a un archivo privado de la VPS y reinicia únicamente el servicio Fitora; no modifica Fit System ni la configuración del proxy. El checkout no se habilita hasta que estén todos los valores y el servidor reciba la confirmación firmada de Mercado Pago. Para Google, creá un cliente OAuth de tipo aplicación web y autorizá el origen `https://fitora.fitsystem.com.ar`; el ID se configura en la variable `GOOGLE_CLIENT_ID`.
