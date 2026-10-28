@@ -92,6 +92,29 @@ jobs:
           EOF
           exit 1
 
+      - name: Prepare optional Mercado Pago configuration
+        env:
+          MP_PUBLIC_KEY: ${{ vars.MP_PUBLIC_KEY }}
+          MP_ACCESS_TOKEN: ${{ secrets.MP_ACCESS_TOKEN }}
+          MP_WEBHOOK_SECRET: ${{ secrets.MP_WEBHOOK_SECRET }}
+          FITORA_PREMIUM_PRICE_ARS: ${{ vars.FITORA_PREMIUM_PRICE_ARS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          config="$RUNNER_TEMP/fitora-premium-runtime.env"
+          : > "$config"
+          [ -z "${MP_PUBLIC_KEY:-}" ] || printf 'MP_PUBLIC_KEY=%s\n' "$MP_PUBLIC_KEY" >> "$config"
+          [ -z "${MP_ACCESS_TOKEN:-}" ] || printf 'MP_ACCESS_TOKEN=%s\n' "$MP_ACCESS_TOKEN" >> "$config"
+          [ -z "${MP_WEBHOOK_SECRET:-}" ] || printf 'MP_WEBHOOK_SECRET=%s\n' "$MP_WEBHOOK_SECRET" >> "$config"
+          [ -z "${FITORA_PREMIUM_PRICE_ARS:-}" ] || printf 'FITORA_PREMIUM_PRICE_ARS=%s\n' "$FITORA_PREMIUM_PRICE_ARS" >> "$config"
+          if [ -s "$config" ]; then
+            ssh -p "$VPS_PORT" -o BatchMode=yes -o IdentitiesOnly=yes -o PasswordAuthentication=no \
+              "$VPS_USER@$VPS_HOST" 'umask 077; cat > ~/.fitora-premium-runtime.env' < "$config"
+            echo "MP_RUNTIME_CONFIG_UPLOADED=true" >> "$GITHUB_ENV"
+          else
+            echo "No hay configuración Premium opcional para desplegar."
+          fi
+
       - name: Deploy
         run: |
           set -euo pipefail
@@ -125,6 +148,19 @@ jobs:
           # y no se versiona, así que sobrevive a los git reset.
           if [ ! -f .env ]; then
             printf 'FITORA_BIND_IP=172.17.0.1\nFITORA_PORT=8088\n' > .env
+          fi
+
+          if [ -f "$HOME/.fitora-premium-runtime.env" ]; then
+            chmod 600 "$HOME/.fitora-premium-runtime.env"
+            for key in MP_PUBLIC_KEY MP_ACCESS_TOKEN MP_WEBHOOK_SECRET FITORA_PREMIUM_PRICE_ARS; do
+              if grep -q "^$key=" "$HOME/.fitora-premium-runtime.env"; then
+                grep -v "^$key=" .env > .env.fitora-new || true
+                grep "^$key=" "$HOME/.fitora-premium-runtime.env" >> .env.fitora-new
+                mv .env.fitora-new .env
+              fi
+            done
+            chmod 600 .env
+            rm -f "$HOME/.fitora-premium-runtime.env"
           fi
 
           if ! command -v docker >/dev/null 2>&1; then
