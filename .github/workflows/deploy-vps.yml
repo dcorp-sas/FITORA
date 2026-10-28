@@ -94,7 +94,7 @@ jobs:
 
       - name: Prepare optional Mercado Pago configuration
         env:
-          MP_PUBLIC_KEY: ${{ vars.MP_PUBLIC_KEY }}
+          MP_PUBLIC_KEY: ${{ vars.MP_PUBLIC_KEY || secrets.MP_PUBLIC_KEY }}
           MP_ACCESS_TOKEN: ${{ secrets.MP_ACCESS_TOKEN }}
           MP_WEBHOOK_SECRET: ${{ secrets.MP_WEBHOOK_SECRET }}
           FITORA_PREMIUM_PRICE_ARS: ${{ vars.FITORA_PREMIUM_PRICE_ARS || '10000' }}
