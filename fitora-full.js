@@ -263,8 +263,9 @@ window.renderProgress = function () {
 };
 
 function fitoraNativeHealthCard() {
-  const panel = document.querySelector('[data-profile-panel="account"]'); if (!panel || $('fitora-native-health')) return;
   const native = Boolean(window.Capacitor?.isNativePlatform?.());
+  if (!native) return;
+  const panel = document.querySelector('[data-profile-panel="account"]'); if (!panel || $('fitora-native-health')) return;
   panel.insertAdjacentHTML('beforeend', `<article class="card" id="fitora-native-health"><div class="sectionhead"><div><small class="eyebrow">SALUD Y ACTIVIDAD</small><h2>Conectar ${/ios/i.test(window.Capacitor?.getPlatform?.() || '') ? 'Apple Health' : 'Health Connect'}</h2></div></div><p class="muted">${native ? 'Importá entrenamientos de relojes y aplicaciones sincronizados con Salud. Fitora pedirá acceso solo a entrenamientos; podés revocarlo cuando quieras.' : 'La conexión con Apple Health y Health Connect está disponible en la app móvil nativa de Fitora.'}</p>${native ? '<button class="secondary" onclick="fitoraConnectHealth()">Conectar y elegir permisos</button><button class="quiet" onclick="fitoraRefreshHealth()">Actualizar actividad</button><button class="quiet" onclick="fitoraShowHealthPrivacy()">Privacidad</button>' : ''}<div id="fitora-health-status" class="muted"></div></article>`);
 }
 async function fitoraHealthPlugin() {
